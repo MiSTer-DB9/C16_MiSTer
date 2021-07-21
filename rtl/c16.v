@@ -60,11 +60,13 @@ module C16
 	output        cass_mtr,
 	input         cass_in,
 	input         cass_aud,
+	output        cass_out,
 
 	input   [4:0] JOY0,
 	input   [4:0] JOY1,
 
 	input  [10:0] ps2_key,
+	output        key_play,
 
 	output        IEC_DATAOUT,
 	input         IEC_DATAIN,
@@ -137,9 +139,9 @@ end
 // valid adresses for SID: FD40-FD5F and FE80-FE9F
 wire cs_sid = (c16_addr[15:5] == 'b1111_1101_010) || (c16_addr[15:5] == 'b1111_1110_100);
 
-wire  [7:0] sid8580_data;
-wire [17:0] sid8580_audio;
-sid8580 sid8580
+wire  [7:0] sid_dout;
+wire [17:0] sid_audio;
+sid_top #(.MULTI_FILTERS(0), .DUAL(0)) sid
 (
 	.reset(sreset),
 	.clk(CLK28),
@@ -148,35 +150,20 @@ sid8580 sid8580
 	.we(~RnW & cs_sid),
 	.addr(c16_addr[4:0]),
 	.data_in(c16_data),
-	.data_out(sid8580_data),
+	.data_out(sid_dout),
 
-	.extfilter_en(1),
-	.audio_data(sid8580_audio)
+	.audio_l(sid_audio),
+
+	.filter_en(1),
+	.mode(sid_type[1]),
+	.cfg(0)
 );
 
-wire  [7:0] sid6581_data;
-wire [17:0] sid6581_audio;
-sid_top #(592) sid6581
-(
-	 .reset(sreset),
-	 .clock(CLK28),
-	 .start_iter(ce_sid),
-
-	 .wren(~RnW & cs_sid),
-	 .addr(c16_addr[4:0]),
-	 .wdata(c16_data),
-	 .rdata(sid6581_data),
-
-	 .extfilter_en(1),
-	 .sample_left(sid6581_audio)
-);
-
-wire [16:0] sid_audio = sid_type[0] ? {sid6581_audio[17], sid6581_audio[17:2]} : sid_type[1] ? {sid8580_audio[17], sid8580_audio[17:2]} : 17'd0;
-wire  [7:0] sid_data  = (sid_type[0] & RnW & cs_sid) ? sid6581_data : (sid_type[1] & RnW & cs_sid) ? sid8580_data : 8'hFF;
+wire  [7:0] sid_data  = (RnW & cs_sid) ? sid_dout : 8'hFF;
 
 // -----------------------------------------------------------------------
 
-wire [16:0] mix_audio = sid_audio + {ted_audio,ted_audio,ted_audio} + {cass_aud, 10'd0};
+wire [16:0] mix_audio = (sid_type ? {sid_audio[17], sid_audio[17:2]} : 17'd0) + {ted_audio,ted_audio,ted_audio} + {cass_aud, 10'd0};
 assign sound = ($signed(mix_audio) > $signed(17'd32767)) ? 16'd32767 : ($signed(mix_audio) < $signed(-17'd32768)) ? $signed(-16'd32768) : mix_audio[15:0];
 
 // -----------------------------------------------------------------------
@@ -230,6 +217,7 @@ c16_keymatrix keyboard
 	.clk(CLK28),
 	.ps2_key(ps2_key),
 	.row(keyboard_row),
+	.key_play(key_play),
 	.kbus(kbus_kbd)
 );
 
@@ -267,31 +255,22 @@ assign c16_data=cpu_data&ted_data&DIN&keyport_data&sid_data; // C16 data bus
 assign ADDR=c16_addr;
 assign DOUT=cpu_data;
 
-reg iec_data;
-reg iec_clk;
-always @(posedge CLK28) begin
-	reg iec_data_d1,iec_data_d2; 
-	reg iec_clk_d1,iec_clk_d2;
-
-	iec_data_d1<=IEC_DATAIN;
-	iec_data_d2<=iec_data_d1;
-	iec_data   <=iec_data_d2; 
-
-	iec_clk_d1 <=IEC_CLKIN;
-	iec_clk_d2 <=iec_clk_d1;
-	iec_clk    <=iec_clk_d2;
-end
+assign {port_in[5],port_in[3:0]} = {port_out[5],port_out[3:0]};
 
 // connect IEC bus
-assign {port_in[5],port_in[3:0]}=0;
-assign IEC_DATAOUT=~port_out[0];
-assign port_in[7]=iec_data & ~port_out[0];
-assign IEC_CLKOUT=~port_out[1];
-assign port_in[6]=iec_clk & ~port_out[1];
-assign IEC_ATNOUT=~port_out[2];
-assign IEC_RESET=sreset;
+wire iec_data, iec_clk;
+iecdrv_sync dat_sync(CLK28, IEC_DATAIN, iec_data);
+iecdrv_sync clk_sync(CLK28, IEC_CLKIN,  iec_clk);
 
-assign cass_mtr = port_out[3];
-assign port_in[4]= cass_in;
+assign IEC_DATAOUT = ~port_out[0];
+assign IEC_CLKOUT  = ~port_out[1];
+assign IEC_ATNOUT  = ~port_out[2];
+assign port_in[6]  = ~port_out[1] & iec_clk;
+assign port_in[7]  = ~port_out[0] & iec_data;
+assign IEC_RESET   = sreset;
+
+assign port_in[4]  = cass_in;
+assign cass_mtr    = port_out[3];
+assign cass_out    = port_out[6];
 
 endmodule
