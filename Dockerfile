@@ -3,4 +3,4 @@ LABEL maintainer="theypsilon@gmail.com"
 WORKDIR /project
 ADD . /project
 RUN /opt/intelFPGA_lite/quartus/bin/quartus_sh --flow compile C16.qpf
-CMD cat /project/output_files/C16.rbf
+CMD ["cat", "/project/output_files/C16.rbf"]
