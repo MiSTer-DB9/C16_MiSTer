@@ -207,7 +207,8 @@ wire  [15:0] joy_raw_payload;
 // [MiSTer-DB9 BEGIN] - DB9/SNAC8 support: probe-gating wires
 // SNAC cores: replace 1'b0 with the core's SNAC enable expression so SNAC
 // preempts the joydb wrapper on shared USER_IO pins. Default 1'b0 is no-op.
-wire         snac_active     = 1'b0;
+// C16: external IEC (status[11]) owns USER_IO[2..5] and preempts the joydb wrapper.
+wire         snac_active     = ext_iec_en;
 // MT32-pi probe-suppression gate. Auto-detected from MT32 signals declared
 // elsewhere in this file (mt32_disable / mt32_use / mt32_on_primary). Hand-edit
 // if the heuristic missed your core's gate expression. Suppresses the OSD-open
@@ -985,7 +986,10 @@ USER_OUT    = '1;
 	USER_OUT[6] = 1;
  end
  // [MiSTer-DB9 BEGIN] - DB9/SNAC8 (and Saturn via wrapper) joystick drive arm
- else if (joy_any_en) begin
+ // Unconditional else (not `else if (joy_any_en)`) so the OSD-open autodetect
+ // probe reaches the pins with UserIO Joystick Off; USER_OUT_DRIVE is all-ones
+ // whenever the probe is idle.
+ else begin
 	USER_OUT = USER_OUT_DRIVE;
  end
  // [MiSTer-DB9 END]
